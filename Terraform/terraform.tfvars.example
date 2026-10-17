@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars and fill in
+aws_region       = "us-east-1"
+project          = "yt-etl"
+pandas_layer_arn = "arn:aws:lambda:us-east-1:336392948345:layer:AWSSDKPandas-Python312:<version>"
