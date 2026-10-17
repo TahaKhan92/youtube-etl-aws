@@ -6,6 +6,11 @@ Athena joins them into an analytics table and runs the KPI queries. Infra is pro
 
 ## Architecture
 
+![Architecture](screenshots/00_architecture.png)
+
+<details>
+<summary>Text version (Mermaid)</summary>
+
 ```mermaid
 flowchart LR
     K[Kaggle CSV + JSON] -->|aws s3 cp| R
@@ -28,6 +33,8 @@ flowchart LR
     T[Terraform] -.->|provisions| LAKE
     CW[CloudWatch Logs] -.-> L
 ```
+
+</details>
 
 **Flow:** CSV/JSON upload to the raw zone → S3 event triggers Lambda → Lambda cleans, casts types, flattens JSON,
 dedups and writes Parquet to the cleansed zone (tables registered in Glue Catalog) → Athena CTAS joins statistics with
