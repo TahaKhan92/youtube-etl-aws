@@ -1,25 +1,37 @@
 # ETL Pipeline on YouTube Data — AWS S3, Glue, Lambda, Athena
 
 Serverless data lake on AWS for the Kaggle **Trending YouTube Video Statistics** dataset.
-Raw CSV + JSON land in S3, get cleansed into Parquet with Glue and Lambda, are joined into an
-analytics table, and queried with Athena (QuickSight on top). Infra is provisioned with Terraform.
+Raw CSV + JSON land in S3, an event-driven Lambda cleanses them into Parquet (registered in the Glue Data Catalog),
+Athena joins them into an analytics table and runs the KPI queries. Infra is provisioned with Terraform.
 
 ## Architecture
 
+```mermaid
+flowchart LR
+    K[Kaggle CSV + JSON] -->|aws s3 cp| R
+
+    subgraph LAKE[S3 Data Lake]
+        R[(RAW / Landing<br/>CSV + JSON)]
+        C[(CLEANSED<br/>Parquet, by region)]
+        A[(ANALYTICS<br/>Parquet, by region)]
+    end
+
+    R -->|S3 event| L[AWS Lambda<br/>pandas ETL]
+    L --> C
+    L -.->|register tables| G[Glue Data Catalog<br/>yt_cleansed / yt_analytics]
+    C --> AT[Amazon Athena<br/>CTAS join]
+    AT --> A
+    AT -.-> G
+    A --> Q[Athena KPI queries<br/>+ charts]
+
+    I[IAM roles + policies] -.-> L
+    T[Terraform] -.->|provisions| LAKE
+    CW[CloudWatch Logs] -.-> L
 ```
-Kaggle files ──aws s3 cp──► S3 RAW (Landing)
-                              ├─ youtube/raw_statistics/region=xx/*.csv ──► Glue Job 1 (Spark) ─┐
-                              │      └─ Glue Crawler ─► yt_raw catalog                           │
-                              └─ youtube/raw_statistics_reference_data/*.json                    ▼
-                                     └─ S3 event ─► Lambda (pandas) ──────────────► S3 CLEANSED (Parquet)
-                                                                                   yt_cleansed catalog
-                                                                                          │
-                                                                          Glue Job 2 (join on category_id + region)
-                                                                                          ▼
-                                                                       S3 ANALYTICS (Parquet) / yt_analytics
-                                                                                          ▼
-                                                                              Athena ─► QuickSight
-```
+
+**Flow:** CSV/JSON upload to the raw zone → S3 event triggers Lambda → Lambda cleans, casts types, flattens JSON,
+dedups and writes Parquet to the cleansed zone (tables registered in Glue Catalog) → Athena CTAS joins statistics with
+categories on `category_id + region` into the analytics zone → KPI queries in Athena.
 
 | Zone | Bucket | Written by | Glue DB |
 |---|---|---|---|
@@ -83,7 +95,7 @@ Check Lambda: CloudWatch Logs → `/aws/lambda/yt-etl-json-to-parquet`.
 from the raw S3 bucket, for environments without Lambda/Athena.
 
 ## Key transformations
-- CSV read with `multiLine` (descriptions contain line breaks), types cast, `trending_date` parsed from `yy.dd.MM`
+- CSV read handles line breaks inside quoted descriptions; types cast; `trending_date` parsed from `yy.dd.MM`
 - Nested JSON `items[].snippet` flattened to `category_id, category_title, region`
 - Duplicates removed on `video_id + trending_date + region`
 - Parquet, partitioned by `region`; `engagement_rate` added in the analytics table
